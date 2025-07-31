@@ -1,0 +1,24 @@
+# STM32CubeIDE build artifacts
+/build/
+Debug/
+Release/
+*.ioc-backup
+*.log
+*.bin
+*.elf
+*.hex
+*.map
+*.o
+*.d
+
+# IDE metadata
+.cproject
+.project
+.settings/
+.ipch/
+*.launch
+*.swp
+
+# OS junk
+.DS_Store
+Thumbs.db
