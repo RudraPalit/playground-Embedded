@@ -1,0 +1,1 @@
+baremetal coding and learning
