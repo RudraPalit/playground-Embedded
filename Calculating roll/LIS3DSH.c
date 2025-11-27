@@ -1,9 +1,16 @@
 /*
- * LIS3DSH.c
+ * LIS3DSH.c - SPI driver for LIS3DSH on STM32F407
+ * Original work: https://github.com/Ruturajn/Accelerometer-SPI-Interface-with-STM32F407VG
+ * Copyright (C) 20XX  Original Author(s)
  *
- *  Created on: Nov 21, 2025
- *      Author: rudradeep-palit
+ * Modifications: extended and adapted by Rudradeep Palit, 2025
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
  */
+
 
 #include "LIS3DSH.h"
 
