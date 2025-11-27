@@ -1,177 +1,171 @@
-📘 STM32F4 Discovery – LIS3DSH Accelerometer Driver + Tilt Angle Demo
+# STM32F4 Discovery – LIS3DSH Accelerometer Driver + Tilt Angle Demo
 
-A fun and technically solid project showing SPI sensor interfacing, real-time math, and SWO debugging on STM32.
+This project demonstrates SPI communication with the onboard **LIS3DSH accelerometer** on the STM32F4-Discovery board.  
+It includes a custom driver, raw data acquisition, g-unit conversion, and real-time **roll/pitch angle** computation.  
+Results are streamed over **SWO (ITM)** using `printf()`.
 
-🧭 Overview
+---
 
-This project demonstrates how to interface the LIS3DSH accelerometer on the STM32F4-Discovery board using a custom SPI driver, convert sensor readings into physical units (g), and compute roll and pitch angles in real-time. Output is streamed over SWO / ITM using printf(), meaning no UART wiring is required.
+## Overview
 
-The codebase is intentionally simple, readable, and educational—perfect for anyone learning embedded systems, IMUs, or bare-metal debugging techniques on ARM Cortex-M microcontrollers.
+This project shows how to:
+- Configure SPI1 in Mode 3
+- Read accelerometer data from LIS3DSH
+- Convert raw measurements into physical units (g)
+- Adjust for the sensor’s inverted mounting
+- Compute **roll** and **pitch** using trigonometric functions
+- Print results live using SWO + ITM with a custom `_write()` function
 
-📂 Features
+The code is deliberately simple and educational, suitable for learning embedded systems and IMU basics.
 
-Custom LIS3DSH driver using SPI1 (mode 3)
+---
 
-Manual chip select handling using PE3
+## Features
 
-WHO_AM_I check for hardware validation
+- Custom LIS3DSH driver (`LIS3DSH.c/.h`)
+- Manual chip-select via GPIO PE3
+- WHO_AM_I device verification
+- Multi-byte SPI reads using auto-increment
+- Sensitivity conversion for ±2 g mode
+- Z-axis inversion correction
+- Roll & pitch angle calculation
+- SWO printf output via ITM port 0
+- Hardware FPU enabled for fast float math
 
-Multi-byte register reads with auto-increment
+---
 
-RAW → g conversion using datasheet sensitivity
+## Hardware Setup
 
-Correct Z-axis sign handling (sensor is inverted on Discovery)
+The LIS3DSH accelerometer is already connected on the STM32F4-Discovery board:
 
-Real-time roll & pitch from accelerometer math
+| Signal | STM32F407 Pin |
+|--------|----------------|
+| SCK    | PA5 |
+| MISO   | PA6 |
+| MOSI   | PA7 |
+| CS     | PE3 |
 
-SWO printf via _write() redirection
+No external wiring required.
 
-FPU enabled for fast floating-point performance
+---
 
-🧱 Hardware Setup
+## Driver Architecture (`LIS3DSH.c`)
 
-You only need the STM32F4-Discovery board.
-All connections are pre-wired on the board.
+### 1. Chip Select Control
 
-Sensor → MCU Mapping (Internal)
-LIS3DSH	STM32F407 Pin
-SCK	PA5
-MISO	PA6
-MOSI	PA7
-CS	PE3
-Power	On-board
-🧩 Driver Architecture (LIS3DSH.c)
+```c
+static void CS_Select(void) {
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+}
 
-The LIS3DSH driver is intentionally minimalistic but robust.
-It contains three core components:
+static void CS_Deselect(void) {
+    HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+}
+```
 
-### 1️⃣ Chip Select Control
-static void CS_Select(void)   { HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET); }
-static void CS_Deselect(void) { HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);   }
+### 2. SPI Register Access
 
+**Write:**
 
-We manually toggle PE3 to start/end SPI transactions.
-
-This ensures precise control and avoids HAL’s automatic NSS behavior.
-
-2️⃣ SPI Register Access
-Write:
-tx[0] = reg & 0x7F;   // write = bit7 = 0
+```c
+tx[0] = reg & 0x7F; // write: bit7 = 0
 tx[1] = data;
+```
 
-Read Multi-byte:
-uint8_t addr = reg | 0x80;   // bit7 = 1 (read)
+**Read Multi-byte:**
+
+```c
+uint8_t addr = reg | 0x80; // read: bit7 = 1
 CS_Select();
 HAL_SPI_Transmit(&hspi1, &addr, 1, HAL_MAX_DELAY);
 HAL_SPI_Receive(&hspi1, buffer, len, HAL_MAX_DELAY);
 CS_Deselect();
+```
 
+### 3. Sensor Initialization
 
-Notes:
+```c
+LIS3DSH_WriteReg(CTRL4, 0x67); // 100Hz, X/Y/Z enabled
+LIS3DSH_WriteReg(CTRL5, 0x00); // ±2g range
+LIS3DSH_WriteReg(CTRL6, 0x10); // ADD_INC = 1
+LIS3DSH_WriteReg(CTRL3, 0x80); // DR_EN
+```
 
-LIS3DSH uses the address auto-increment bit inside CTRL6, not in the address byte.
+### 4. RAW → g Conversion
 
-Multi-byte reads fetch X_L, X_H, Y_L, Y_H, Z_L, Z_H in one shot.
+```c
+const float SENS = 0.00006f; // g/LSB
 
-3️⃣ Sensor Initialization
-LIS3DSH_WriteReg(CTRL4, 0x67);   // 100Hz, enable X/Y/Z
-LIS3DSH_WriteReg(CTRL5, 0x00);   // ±2g range
-LIS3DSH_WriteReg(CTRL6, 0x10);   // ADD_INC = 1
-LIS3DSH_WriteReg(CTRL3, 0x80);   // data-ready enable
+*ax = raw->X * SENS;
+*ay = raw->Y * SENS;
+*az = raw->Z * SENS;
+```
 
+---
 
-Sensor outputs new data at 100 Hz.
+## Main Program Flow (`main.c`)
 
-±2g sensitivity gives best resolution.
+### 1. Enable FPU
 
-Auto-increment allows fast 6-byte reads.
-
-Data-ready ensures stable sample timing.
-
-4️⃣ RAW Reading + Conversion
-raw->X = (buf[1] << 8) | buf[0];
-ax = raw->X * 0.00006f;   // sensitivity for ±2g
-
-
-Sensitivity = 0.06 mg/LSB = 0.00006 g/LSB
-
-Converting to g-units makes tilt calculations meaningful.
-
-🧠 Main Program Flow (main.c)
-
-The main program orchestrates everything:
-
-1️⃣ Enable FPU
+```c
 SCB->CPACR |= (0xF << 20);
+```
 
+### 2. Initialize HAL, clock, GPIO, SPI, LIS3DSH
 
-Enables CP10/CP11 for fast float math (atan2f, sqrtf, multiplications).
+Standard CubeMX initialization.
 
-2️⃣ Initialize HAL + Peripherals
+### 3. SWO Printf Redirection
 
-System clock → HSI @ 16 MHz
-
-SPI1 → Mode 3
-
-GPIOE → PE3 as output
-
-SWO ITM enabled for debugging
-
-3️⃣ Printf Redirection to SWO
-int _write(...) {
-    ITM_SendChar(ptr[i]);
+```c
+int _write(int file, char *ptr, int len) {
+    for(int i = 0; i < len; i++)
+        ITM_SendChar(ptr[i]);
+    return len;
 }
+```
 
+### 4. Read Sensor, Convert, Compute Angles
 
-Lets you use printf()
-
-Sends characters out via SWO ITM Stimulus Port 0
-
-View inside CubeIDE → SWV → ITM Console
-
-4️⃣ Sensor Loop (Read → Convert → Angles → Print)
+```c
 LIS3DSH_ReadRaw(&raw);
 LIS3DSH_ConvertToG(&raw, &ax, &ay, &az);
-az = -az; // board-mounted compensation
 
-Angle math:
-roll  = atan2f(ay, az);
-pitch = atan2f(-ax, sqrtf(ay*ay + az*az));
+// LIS3DSH is mounted upside-down
+az = -az;
 
-Output:
-printf("RAW X=%d Y=%d Z=%d\n", raw.X, raw.Y, raw.Z);
-printf("G ax=%.4f ay=%.4f az=%.4f\n", ax, ay, az);
-printf("roll=%.2f pitch=%.2f\n");
+float roll  = atan2f(ay, az) * 180.0f / M_PI;
+float pitch = atan2f(-ax, sqrtf(ay*ay + az*az)) * 180.0f / M_PI;
 
-📟 Example Output
-RAW X=320 Y=330 Z=17040
-G    ax=0.019 ay=0.020 az=1.020
+printf("RAW  X=%d Y=%d Z=%d\n", raw.X, raw.Y, raw.Z);
+printf("G    ax=%.4f ay=%.4f az=%.4f\n", ax, ay, az);
+printf("ANG  roll=%.2f  pitch=%.2f\n\n", roll, pitch);
+```
+
+---
+
+## Example Output
+
+```
+RAW  X=320 Y=330 Z=17040
+G    ax=0.0190 ay=0.0200 az=1.0200
 ANG  roll=0.92 deg  pitch=-1.05 deg
+```
 
+---
 
-Board flat → angles near 0°.
-Tilt → numbers change smoothly.
+## Possible Extensions
 
-🎯 Why This Project Matters
+- Low-pass filtering (EMA)  
+- LED tilt indicators  
+- Gyro + accelerometer fusion (Complementary/Kalman filter)  
+- UART data streaming + Python plotting  
+- Full IMU abstraction layer  
 
-Shows real low-level SPI communication
+---
 
-Demonstrates sensor fusion fundamentals using only an accelerometer
+## Author
 
-Uses SWO debugging, a massively underrated STM32 feature
+Rudradeep Palit  
+Embedded Systems & Firmware Developer
 
-Clean, small driver code that is easy to extend
-
-Great template for more complex IMU projects
-
-🔮 Extensions / Future Work
-
-Add EMA low-pass filtering to smooth angles
-
-Fuse with a gyroscope (L3GD20) for full 6-DoF
-
-Add UART logging + Python plotting
-
-Display angles on the board’s LEDs
-
-Use the sensor for fall detection / tilt alarms
