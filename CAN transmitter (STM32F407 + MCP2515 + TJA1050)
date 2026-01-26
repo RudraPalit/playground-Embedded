@@ -1,0 +1,1 @@
+STM32F407 + MCP2515 CAN bus bring-up using SPI. Implements low-level MCP2515 driver, bitrate configuration (500 kbps), NORMAL mode operation, and CAN frame transmission verified with a USB-CAN analyzer
